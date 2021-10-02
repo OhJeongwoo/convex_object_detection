@@ -32,6 +32,7 @@
 
 #include "utils.h"
 
+
 using namespace std;
 
 typedef pair<pixel3d, int> pixel_id;
@@ -171,214 +172,51 @@ int main(int argc, char **argv){
         for(int i = 0; i < G; i++) clusters[i].build_polyhedron();
 
         // second clustering
-        vector<vector<int>> adj(G);
-        for(int i=0;i<G;i++){
-            vector<int> tmp;
-            for(int j=i+1;j<G;j++){
-                if(gjk(clusters[i], clusters[j]) < group_threshold_) {
-                    adj[i].push_back(j);
-                    adj[j].push_back(i);
-                }
-            }
-        }
+        // vector<vector<int>> adj(G);
+        // for(int i=0;i<G;i++){
+        //     vector<int> tmp;
+        //     for(int j=i+1;j<G;j++){
+        //         if(gjk(clusters[i], clusters[j]) < group_threshold_) {
+        //             adj[i].push_back(j);
+        //             adj[j].push_back(i);
+        //         }
+        //     }
+        // }
 
-        vector<vector<int>> group_clusters;
-        vector<bool> group_visited(G, false);
-        for(int i=0;i<G;i++){
-            if(group_visited[i]) continue;
-            vector<int> cluster;
-            queue<int> q;
-            q.push(i);
-            while(!q.empty()){
-                int cur = q.front();
-                q.pop();
-                if(group_visited[cur]) continue;
-                cluster.push_back(cur);
-                for(int nxt : adj[cur]){
-                    if(group_visited[nxt]) continue;
-                    q.push(nxt);
-                }
-            }
-            group_clusters.push_back(cluster);
-        }
+        // vector<vector<int>> group_clusters;
+        // vector<bool> group_visited(G, false);
+        // for(int i=0;i<G;i++){
+        //     if(group_visited[i]) continue;
+        //     vector<int> cluster;
+        //     queue<int> q;
+        //     q.push(i);
+        //     while(!q.empty()){
+        //         int cur = q.front();
+        //         q.pop();
+        //         if(group_visited[cur]) continue;
+        //         cluster.push_back(cur);
+        //         for(int nxt : adj[cur]){
+        //             if(group_visited[nxt]) continue;
+        //             q.push(nxt);
+        //         }
+        //     }
+        //     group_clusters.push_back(cluster);
+        // }
 
-        // merge convex polyhedron
-        vector<group> objects;
-        for(int i=0;i<group_clusters.size();i++){
-            vector<group> merged_groups;
-            for(int id : group_clusters[i]) merged_groups.push_back(clusters[id]);
-            objects.push_back(merge_groups(merged_groups));
-        }
+        // // merge convex polyhedron
+        // vector<group> objects;
+        // for(int i=0;i<group_clusters.size();i++){
+        //     vector<group> merged_groups;
+        //     for(int id : group_clusters[i]) merged_groups.push_back(clusters[id]);
+        //     objects.push_back(merge_groups(merged_groups));
+        // }
 
-        // assign class for each convex polyhedron
-        int n_objects = objects.size();
+        // // assign class for each convex polyhedron
+        // int n_objects = objects.size();
         
 
-        // find parameters for each convex polyhedron
-        for(int i=0;i<n_objects;i++) objects[i].solve();
+        // // find parameters for each convex polyhedron
+        // for(int i=0;i<n_objects;i++) objects[i].solve();
 
     }
-
-//     for(int i = 0; i<NN;i++){
-//         if (i<101) continue;
-//         string data_name = data_name_list[i];
-//         stringstream data_path;
-//         data_path << ros::package::getPath("sensor_decoder") << "/data/" << data_name << "/";
-//         cout << "[" << i + 1 << "/" << NN << ", " << double(end - begin) / CLOCKS_PER_SEC << "] Start to object detection for data named " << data_name << endl; 
-        
-//         string pcd_path = data_path.str() + "pcd/";
-//         string obj_path = data_path.str() + "object/";
-//         int st = seq_list[i].first;
-//         int en = seq_list[i].second;
-//         int MM = en - st;
-
-//         for(int load_seq = 1; load_seq < MM + 1; load_seq++){
-//             int seq = load_seq + st;
-//             string pcd_file = pcd_path + zfill(seq) + ".pcd";
-//             string obj_file = obj_path + zfill(seq) + ".txt";
-            
-//             pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
-//             if (pcl::io::loadPCDFile<pcl::PointXYZ> (pcd_file, *cloud) == -1) {
-//                 PCL_ERROR ("Couldn't read file test_pcd.pcd \n");
-//                 return (-1);
-//             }
-
-//             vector<point> grid_map[GRID][GRID];
-//             for(const auto& p : *cloud) {
-//                 double x = p.x;
-//                 double y = p.y;
-//                 double z = p.z;
-//                 if(x < minX + EPS || x > maxX - EPS || y < minY + EPS || y > maxY - EPS || z < minZ || z > maxZ) continue;
-//                 point t;
-//                 t.x = x;
-//                 t.y = y;
-//                 t.valid = false;
-//                 t.occluded = false;
-//                 pii pixel = xy_to_pixel(t);
-//                 grid_map[pixel.first][pixel.second].push_back(t);
-//             }
-//             // clustering
-//             vector<vector<point>> clusters;
-//             for(int i = 0; i < GRID; i++){
-//                 for(int j = 0; j < GRID; j++){
-//                     int sz = grid_map[i][j].size();
-//                     for(int k = 0; k < sz; k++){
-//                         if(grid_map[i][j][k].valid) continue;
-//                         double point_threshold = max(10.0, 50 - 1.5 * (abs(grid_map[i][j][k].x) + abs(grid_map[i][j][k].y)));
-//                         vector<point> cluster;
-//                         queue<piii> q;
-//                         q.push({{i,j},k});
-//                         while(!q.empty()){
-//                             int px = q.front().first.first;
-//                             int py = q.front().first.second;
-//                             int id = q.front().second;
-//                             point cur = grid_map[px][py][id];
-//                             q.pop();
-//                             if(grid_map[px][py][id].valid) continue;
-//                             grid_map[px][py][id].valid = true;
-//                             double dist_threshold = min(1.0, (abs(cur.x) + abs(cur.y))/30.0) * cluster_threshold;
-//                             cluster.push_back(grid_map[px][py][id]);
-//                             for(int dx = -R; dx <= R; dx++){
-//                                 for(int dy = -R; dy <= R; dy++){
-//                                     int nx = px + dx;
-//                                     int ny = py + dy;
-//                                     if(nx < 0 || nx >= GRID || ny < 0 || ny >= GRID) continue;
-//                                     int nsz = grid_map[nx][ny].size();
-//                                     for(int nk = 0; nk < nsz; nk++){
-//                                         if(grid_map[nx][ny][nk].valid) continue;
-//                                         if(dist(cur, grid_map[nx][ny][nk]) < dist_threshold) q.push({{nx, ny}, nk});
-//                                     }
-//                                 }
-//                             }
-//                         }
-//                         if(cluster.size() > point_threshold) {
-//                             // cout << cluster.size() << endl;
-//                             clusters.push_back(cluster);
-//                         }
-//                     }
-//                 }
-//             }
-//             //build convex hull for each cluster
-//             vector<ConvexHull> cvh_list;
-//             for(const vector<point>& v : clusters) cvh_list.push_back(ConvexHull(v));
-
-//             // build adj matrix with gjk algorithm
-//             int N = cvh_list.size();
-//             // cout << "# of cvh before merge: " << N << endl;
-//             vector<vector<int>> adj(N);
-//             for(int i = 0; i < N; i++){
-//                 for(int j = i+1; j < N; j++){
-//                     if(gjk(cvh_list[i].p, cvh_list[j].p) < convex_hull_threshold){
-//                         adj[i].push_back(j);
-//                         adj[j].push_back(i);
-//                     }
-//                 }
-//             }
-//             // merge convex hull
-//             vector<bool> convex_visited(N, false);
-//             vector<ConvexHull> obstacles;
-//             for(int i=0;i<N;i++){
-//                 if(convex_visited[i]) continue;
-//                 vector<ConvexHull> cluster;
-//                 queue<int> q;
-//                 q.push(i);
-//                 while(!q.empty()){
-//                     int cur = q.front();
-//                     q.pop();
-//                     if(convex_visited[cur]) continue;
-//                     cluster.push_back(cvh_list[cur]);
-//                     convex_visited[cur] =  true;
-//                     for(int next : adj[cur]){
-//                         if(convex_visited[next]) continue;
-//                         q.push(next);
-//                     }
-//                 }
-//                 obstacles.push_back(UnionConvexHull(cluster));
-//             }
-
-//             // cout << "# of cvh after merge : " << obstacles.size() << endl;
-
-//             // for each cluster, find optimal solution
-//             ofstream out(obj_file.c_str());
-//             vector<point> origin;
-//             origin.push_back(point());
-//             vector<BoundingBox> boxes;
-//             for(int i=0;i<obstacles.size();i++) {
-//                 vector<pdi> pa;
-//                 for(int j=0;j<obstacles[i].size;j++) pa.push_back({atan2(obstacles[i].p[i].y, obstacles[i].p[i].x), j});
-//                 sort(pa.begin(), pa.end());
-//                 pdi s = pa[0];
-//                 pdi e = pa[obstacles[i].size-1];
-//                 for(int j=0;j<obstacles[i].size-1;j++){
-//                     if(pa[j+1].first - pa[j].first > M_PI){
-//                         s = pa[j];
-//                         e = pa[j+1];
-//                         break;
-//                     }
-//                 }
-//                 ConvexHull c = ConvexHull({point(0,0), obstacles[i].p[s.second], obstacles[i].p[e.second]});
-//                 for(int j=0;j<obstacles[i].size;j++){
-//                     if(j==s.second || j == e.second) obstacles[i].p[j].occluded = false;
-//                     else if(isIncludeConvexHull(c, obstacles[i].p[j])) obstacles[i].p[j].occluded = false;
-//                     else obstacles[i].p[j].occluded = true;
-//                 }
-//             }
-//             for(const ConvexHull& cvh : obstacles){
-//                 BoundingBox b = BoundingBox(cvh.center.x, cvh.center.y, 0.0, 5.0, 2.5);
-//                 b.optimize(cvh.p, gjk(cvh.p, origin));
-//                 boxes.push_back(b);
-//             }
-//             sort(boxes.begin(), boxes.end());
-//             for(const BoundingBox& b : boxes){
-//                 out << to_string(b.loss) << " " << to_string(b.box_loss) << " " << to_string(b.x) << " " << to_string(b.y) << " " << to_string(b.theta) << " " << to_string(b.l) << " " << to_string(b.w) << endl;
-//             }
-//             out.close();
-//             end = clock();
-//             if (load_seq % 100 == 0) cout << "[" << load_seq << "/" << MM << ", " << double(end - begin) / CLOCKS_PER_SEC << "] In progress to object detection" << endl;
-//         }
-
-//     }
-        
-
-//   return (0);
 }

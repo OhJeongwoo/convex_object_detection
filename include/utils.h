@@ -1,5 +1,6 @@
 #ifndef UTILS_H
 #define UTILS_H
+#define CONVHULL_3D_ENABLE
 
 #include <cmath>
 #include <ctime>
@@ -7,6 +8,8 @@
 #include <vector>
 #include <stack>
 #include "ros/ros.h"
+
+#include "convexhull_3d.h"
 
 using namespace std;
 
@@ -31,6 +34,13 @@ double resolution_z = 0.1;
 const int GRID_X = int((maxX-minX+EPS)/resolution_x);
 const int GRID_Y = int((maxY-minY+EPS)/resolution_y);
 const int GRID_Z = int((maxZ-minZ+EPS)/resolution_z);
+
+const double ALPHA_L = 1.0;
+const double ALPHA_W = 1.0;
+const double ALPHA_H = 1.0;
+const double ALPHA_P = 1.0;
+const double ALPHA_F = 1.0;
+const double ALPHA_D = 1.0;
 
 struct pixel3d{
     int x, y, z;
@@ -65,27 +75,173 @@ struct face{
 
 };
 
+struct bounding_box{
+    double x;
+    double y;
+    double z;
+    double yaw;
+    double l;
+    double w;
+    double h;
+    int type;
+
+    bounding_box(): bounding_box(1){}
+    bounding_box(int type): type(type){
+        if(type == 1){
+            this->x = 0.0;
+            this->y = 0.0;
+            this->z = 0.0;
+            this->yaw = 0.0;
+            this->l = 5.0;
+            this->w = 2.5;
+            this->h = 1.5;
+        }
+    }
+    bounding_box(point p, int type) : bounding_box(type){
+        this->x = p.x;
+        this->y = p.y;
+        this->z = p.z;
+    }
+
+};
+
 struct group{
     vector<point> pts;
-    vector<int> vertices;
+    // vector<int> vertices;
     vector<vector<int>> faces;
     int N;
     int V;
     int F;
+    vector<bool> is_hull;
+    vector<bool> occluded_face;
     bool has_polyhedron;
+    point center;
+    bounding_box box;
+    int max_iter;
+    double cur_loss;
+    double prv_loss;
+    double g_x;
+    double g_y;
+    double g_z;
+    double g_t;
+    double g_l;
+    double g_w;
+    double g_h;
+    double loss_threshold_;
+    double gt_l;
+    double gt_w;
+    double gt_h;
+
 
     group() {}
     group(vector<point> pts): pts(pts), N(pts.size()){
-        V = -1;
-        F = -1;
+        V = 0;
+        F = 0;
+        center = point();
+        max_iter = 100;
+        loss_threshold_ = 0.1;
         has_polyhedron = false;
     }
     void build_polyhedron(){
+        ch_vertex* vertices;
+        vertices = (ch_vertex*)malloc(N*sizeof(ch_vertex));
+        for(int i=0;i<N;i++){
+            vertices[i].x = pts[i].x;
+            vertices[i].y = pts[i].y;
+            vertices[i].z = pts[i].z;
+            is_hull.push_back(false);
+        }
+        int* faceindices = NULL;
+        convhull_3d_build(vertices, N, &faceindices, &F);
+        for(int i=0; i<F;i++){
+            faces.push_back({faceindices[3*i],faceindices[3*i+1],faceindices[3*i+2]});
+            is_hull[faceindices[3*i]] = true;
+            is_hull[faceindices[3*i+1]] = true;
+            is_hull[faceindices[3*i+2]] = true;
+        }
+        for(int i=0;i<N;i++){
+            if(!is_hull[i]) continue;
+            V++;
+            center.x += pts[i].x;
+            center.y += pts[i].y;
+            center.z += pts[i].z;
+        }
+        center.x /= V;
+        center.y /= V;
+        center.z /= V;
+        
+        for(int i=0;i<F;i++) occluded_face.push_back(is_occluded(i));
+
+
+        cout << "Completed to build polyhedron" << endl;
+        cout << "N: " << N << endl;
+        cout << "V: " << V << endl;
+        cout << "F: " << F << endl;
+        cout << "center: " << center.x << " " << center.y << " " << center.z << endl;
         has_polyhedron = true;
     }
 
+    bool is_occluded(int id){
+        // check the i-th face is occluded from origin
+        return false;
+    }
+
+    double point2cvh(point p){
+        return 1.0;
+    }
+
+    void calculate_box_loss(){
+
+    }
+
     void solve(){
-        
+        box = bounding_box(center, 1);
+        gt_l = 5.0;
+        gt_w = 2.5;
+        gt_h = 1.5;
+
+        // classify occluded faces
+
+
+        // measure origin to polyhedron
+        double d_cvh = point2cvh(point(0,0,0));
+
+        for(int iter = 0; iter < max_iter; iter++){
+            cur_loss = 0.0;
+            g_x = 0.0;
+            g_y = 0.0;
+            g_z = 0.0;
+            g_t = 0.0;
+            g_l = 0.0;
+            g_w = 0.0;
+            g_h = 0.0;
+
+            // calculate gradient
+            // model loss
+            cur_loss += ALPHA_L * (box.l - gt_l) * (box.l - gt_l);
+            g_l += ALPHA_L * 2 * (box.l - gt_l);
+
+            cur_loss += ALPHA_W * (box.w - gt_w) * (box.w - gt_w);
+            g_w += ALPHA_W * 2 * (box.w - gt_w);
+            
+            cur_loss += ALPHA_H * (box.h - gt_h) * (box.h - gt_h);
+            g_h += ALPHA_H * 2 * (box.h - gt_h);
+
+            // point loss
+            
+
+            // face loss
+
+            // dist loss
+
+
+            // update
+
+            // if loss is similar to previous, break
+            if (iter>0 && abs(cur_loss - prv_loss) < loss_threshold_) break;
+            prv_loss = cur_loss;
+        }
+
     }
 };
 

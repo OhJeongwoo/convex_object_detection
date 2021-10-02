@@ -56,6 +56,7 @@ set (SOURCES
 set (HEADERS
  #${CMAKE_CURRENT_SOURCE_DIR}/include/{LIB_NAME}.h
  ${CMAKE_CURRENT_SOURCE_DIR}/include/utils.h
+ ${CMAKE_CURRENT_SOURCE_DIR}/include/convexhull_3d.h
 )
 
 
