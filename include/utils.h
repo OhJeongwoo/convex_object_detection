@@ -25,6 +25,10 @@ double minX = -20.0;
 double maxX = 40.0;
 double minY = -30.0;
 double maxY = 30.0;
+// double minX = -20.0;
+// double maxX = 40.0;
+// double minY = -2.0;
+// double maxY = 6.0;
 double minZ = 0.5;
 double maxZ = 2.0;
 double resolution_x = 1.0;
@@ -39,6 +43,7 @@ const double ALPHA_L = 1.0;
 const double ALPHA_W = 1.0;
 const double ALPHA_H = 1.0;
 const double ALPHA_P = 1.0;
+const double ALPHA_O = 1.0;
 const double ALPHA_F = 1.0;
 const double ALPHA_D = 1.0;
 
@@ -70,9 +75,95 @@ struct point{
     point operator *(const double t) const{return point(x*t, y*t);}
 };
 
-struct face{
-    int a,b,c;
+point pixel2point(pixel3d p){
+    return point(p.x * resolution_x + minX, p.y * resolution_y + minY, p.z * resolution_z + minZ);
+}
 
+pixel3d point2pixel(point p){
+    return pixel3d((p.x - minX)/resolution_x, (p.y - minY)/resolution_y, (p.z - minZ)/resolution_z);
+}
+
+bool is_valid_pixel(pixel3d p){
+    return p.x >= 0 && p.x < GRID_X && p.y >=0 && p.y < GRID_Y && p.z >=0 && p.z < GRID_Z;
+}
+
+double norm3d(point p){
+    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+}
+
+point cross(point u, point v){
+    return point(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x);
+}
+
+bool ccw(point A, point B, point C){
+    return (B.x - A.x)*(C.y - A.y) - (C.x - A.x)*(B.y - A.y) > 0;
+}
+
+point normalize(point p){
+    double mag = norm3d(p);
+    return point(p.x / mag, p.y / mag, p.z / mag);
+}
+
+
+string zfill(int n){
+    if(n==0) return "000000";
+    int digit = log10(n) + 1;
+    string rt = "";
+    for(int i=0;i<6-digit;i++) rt += "0";
+    return rt+to_string(n);
+}
+
+struct face{
+    point A,B,C;
+    point n;
+    double a,b,c,d;
+    double la, lb, lc;
+    double area;
+
+    face(point A, point B, point C):A(A), B(B), C(C){
+        area = 0.5 * norm3d(cross(A-B, A-C));
+        n = normalize(cross(A-B, A-C));
+        a = n.x;
+        b = n.y;
+        c = n.z;
+        d = -(a * A.x + b * A.y + c * A.z);
+
+        la = norm3d(B-C);
+        lb = norm3d(C-A);
+        lc = norm3d(A-B);
+    }
+
+    bool on_face(point p){
+        // assume point p on the plane
+        double parea = norm3d(cross(p-A, p-B)) + norm3d(cross(p-B, p-C)) + norm3d(cross(p-C, p-A));
+        parea *= 0.5;
+        if (abs(parea - area) < EPS) return true;
+        return false;
+    }
+
+    double distance2face(point p){
+        double t = a * p.x + b * p.y + c * p.z + d;
+        point ph = point(p.x - a * t, p.y - b * t, p.z - c * t);
+
+        if (on_face(ph)) return t;
+
+        double tt = INF;
+        tt = min<double>(tt, norm3d(ph - A));
+        tt = min<double>(tt, norm3d(ph - B));
+        tt = min<double>(tt, norm3d(ph - C));
+
+        double tmp;
+        tmp = (ph-B) * (A-B) / lc;
+        if (tmp >= 0 && tmp <= lc) tt = min<double>(tt, norm3d(cross(ph-B, A-B))/lc);
+
+        tmp = (ph-C) * (B-C) / la;
+        if (tmp >= 0 && tmp <= la) tt = min<double>(tt, norm3d(cross(ph-C, B-C))/la);
+
+        tmp = (ph-A) * (C-A) / lb;
+        if (tmp >= 0 && tmp <= lb) tt = min<double>(tt, norm3d(cross(ph-A, C-A))/lb);
+
+        return sqrt(t*t + tt * tt);    
+    }
 };
 
 struct bounding_box{
@@ -112,6 +203,8 @@ struct group{
     int N;
     int V;
     int F;
+    int VF;
+    double sum_projection_area;
     vector<bool> is_hull;
     vector<bool> occluded_face;
     bool has_polyhedron;
@@ -131,12 +224,15 @@ struct group{
     double gt_l;
     double gt_w;
     double gt_h;
+    double lr_init = 3e-2;
+    double decay_k = 5e-2;
 
 
     group() {}
     group(vector<point> pts): pts(pts), N(pts.size()){
         V = 0;
         F = 0;
+        VF = 0;
         center = point();
         max_iter = 100;
         loss_threshold_ = 0.1;
@@ -169,8 +265,26 @@ struct group{
         center.x /= V;
         center.y /= V;
         center.z /= V;
+
+        for(int i=0;i<F;i++){
+            face f = face(pts[faces[i][0]], pts[faces[i][1]], pts[faces[i][2]]);
+            if(f.n * center > f.d){
+                int tmp = faces[i][0];
+                faces[i][0] = faces[i][1];
+                faces[i][1] = tmp;
+            }
+            
+        }
         
-        for(int i=0;i<F;i++) occluded_face.push_back(is_occluded(i));
+        for(int i=0;i<F;i++) {
+            if (is_occluded(i)) occluded_face.push_back(true);
+            else {
+                occluded_face.push_back(false);
+                VF ++;
+                face f = face(pts[faces[i][0]], pts[faces[i][1]], pts[faces[i][2]]);
+                sum_projection_area += f.area * sqrt(f.n.x * f.n.x + f.n.y * f.n.y);
+            }
+        }
 
 
         cout << "Completed to build polyhedron" << endl;
@@ -183,15 +297,273 @@ struct group{
 
     bool is_occluded(int id){
         // check the i-th face is occluded from origin
-        return false;
+        face f = face(pts[faces[id][0]], pts[faces[id][1]], pts[faces[id][2]]);
+        return f.d > 0;
     }
 
     double point2cvh(point p){
-        return 1.0;
+        point origin = point(0,0,0);
+        double rt = INF;
+        for(int i=0;i<F;i++){
+            face f = face(pts[faces[i][0]], pts[faces[i][1]], pts[faces[i][2]]);
+            rt = min<double>(rt, f.distance2face(origin));
+        }
+        return rt;
     }
 
-    void calculate_box_loss(){
 
+    vector<double> calculate_loss_and_grad(int type, double px, double py, double pz, double rx, double ry, double rz, double st, double ct){
+        vector<double> values;
+        values.push_back(abs(rx-box.l/2));
+        values.push_back(abs(rx+box.l/2));
+        values.push_back(abs(ry-box.w/2));
+        values.push_back(abs(ry+box.w/2));
+        values.push_back(abs(rz-box.h/2));
+        values.push_back(abs(rz+box.h/2));
+        vector<double> rt;
+            
+        if (type == 0){
+            rt.push_back(values[type] * values[type]);
+            rt.push_back(2.0 * (box.l/2 - rx) * ct);
+            rt.push_back(2.0 * (box.l/2 - rx) * st);
+            rt.push_back(0.0);
+            rt.push_back(-2.0 * (box.l/2 - rx) * ((px - box.x) * (-st) + (py - box.y) * ct));
+            rt.push_back(box.l/2 - rx);
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            return rt;
+        }
+        if (type == 1){
+            rt.push_back(values[type] * values[type]);
+            rt.push_back(-2.0 * (box.l/2 + rx) * ct);
+            rt.push_back(-2.0 * (box.l/2 + rx) * st);
+            rt.push_back(0.0);
+            rt.push_back(2.0 * (box.l/2 + rx) * ((px - box.x) * (-st) + (py - box.y) * ct));
+            rt.push_back(box.l/2 + rx);
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            return rt;
+        }
+        if (type == 2){
+            rt.push_back(values[type] * values[type]);
+            rt.push_back(-2.0 * (box.w/2 - ry) * st);
+            rt.push_back(2.0 * (box.w/2 - ry) * ct);
+            rt.push_back(0.0);
+            rt.push_back(2.0 * (box.w/2 - ry) * ((px - box.x) * ct + (py - box.y) * st));
+            rt.push_back(0.0);
+            rt.push_back(box.w/2 - ry);
+            rt.push_back(0.0);
+            return rt;
+        }
+        if (type == 3){
+            rt.push_back(values[type] * values[type]);
+            rt.push_back(2.0 * (box.w/2 + ry) * st);
+            rt.push_back(-2.0 * (box.w/2 + ry) * ct);
+            rt.push_back(0.0);
+            rt.push_back(-2.0 * (box.w/2 + ry) * ((px - box.x) * ct + (py - box.y) * st));
+            rt.push_back(0.0);
+            rt.push_back(box.w/2 + ry);
+            rt.push_back(0.0);
+            return rt;
+        }
+        if (type == 4){
+            rt.push_back(values[type] * values[type]);
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            rt.push_back(2.0 * (box.h/2 - rz));
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            rt.push_back(box.h/2 - rz);
+            return rt;
+        }
+        if(type==5){
+            rt.push_back(values[type] * values[type]);
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            rt.push_back(-2.0 * (box.h/2 + rz));
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            rt.push_back(0.0);
+            rt.push_back(box.h/2 + rz);
+            return rt;
+        }
+    }
+
+    vector<double> calculate_box_loss(const point& p){
+        double px = p.x;
+        double py = p.y;
+        double pz = p.z;
+        double ct = cos(box.yaw);
+        double st = sin(box.yaw);
+        double rx = (px - box.x) * ct + (py - box.y) * st;
+        double ry = - (px - box.x) * st + (py - box.y) * ct;
+        double rz = pz - box.z;
+            
+
+        if (abs(rx)<box.l/2 && abs(ry) <box.w/2 && abs(rz) < box.h/2){
+            vector<double> values;
+            values.push_back(abs(rx-box.l/2));
+            values.push_back(abs(rx+box.l/2));
+            values.push_back(abs(ry-box.w/2));
+            values.push_back(abs(ry+box.w/2));
+            values.push_back(abs(rz-box.h/2));
+            values.push_back(abs(rz+box.h/2));
+            int type = 0;
+            double value = values[0];
+            for(int i=1;i<=5;i++){
+                if(values[i] < value){
+                    type = i;
+                    value = values[i];
+                }
+            }
+            return calculate_loss_and_grad(type, px, py, pz, rx, ry, rz, st, ct);
+        }
+        else{
+            double rt_loss = 0.0;
+            double rt_grad_x = 0.0;
+            double rt_grad_y = 0.0;
+            double rt_grad_z = 0.0;
+            double rt_grad_theta = 0.0;
+            double rt_grad_l = 0.0;
+            double rt_grad_w = 0.0;
+            double rt_grad_h = 0.0;
+            if(rx>box.l/2){
+                vector<double> rt = calculate_loss_and_grad(0, px, py, pz, rx, ry, rz, st, ct);
+                rt_loss += rt[0];
+                rt_grad_x += rt[1];
+                rt_grad_y += rt[2];
+                rt_grad_z += rt[3];
+                rt_grad_theta += rt[4];
+                rt_grad_l += rt[5];
+                rt_grad_w += rt[6];
+                rt_grad_h += rt[7];
+            }
+            if(rx<-box.l/2){
+                vector<double> rt = calculate_loss_and_grad(1, px, py, pz, rx, ry, rz, st, ct);
+                rt_loss += rt[0];
+                rt_grad_x += rt[1];
+                rt_grad_y += rt[2];
+                rt_grad_z += rt[3];
+                rt_grad_theta += rt[4];
+                rt_grad_l += rt[5];
+                rt_grad_w += rt[6];
+                rt_grad_h += rt[7];
+            }
+            if(ry>box.w/2){
+                vector<double> rt = calculate_loss_and_grad(2, px, py, pz, rx, ry, rz, st, ct);
+                rt_loss += rt[0];
+                rt_grad_x += rt[1];
+                rt_grad_y += rt[2];
+                rt_grad_z += rt[3];
+                rt_grad_theta += rt[4];
+                rt_grad_l += rt[5];
+                rt_grad_w += rt[6];
+                rt_grad_h += rt[7];
+            }
+            if(ry<-box.w/2){
+                vector<double> rt = calculate_loss_and_grad(3, px, py, pz, rx, ry, rz, st, ct);
+                rt_loss += rt[0];
+                rt_grad_x += rt[1];
+                rt_grad_y += rt[2];
+                rt_grad_z += rt[3];
+                rt_grad_theta += rt[4];
+                rt_grad_l += rt[5];
+                rt_grad_w += rt[6];
+                rt_grad_h += rt[7];
+            }
+            if(rz>box.h){
+                vector<double> rt = calculate_loss_and_grad(4, px, py, pz, rx, ry, rz, st, ct);
+                rt_loss += rt[0];
+                rt_grad_x += rt[1];
+                rt_grad_y += rt[2];
+                rt_grad_z += rt[3];
+                rt_grad_theta += rt[4];
+                rt_grad_l += rt[5];
+                rt_grad_w += rt[6];
+                rt_grad_h += rt[7];
+            }
+            if(rz<-box.h/2){
+                vector<double> rt = calculate_loss_and_grad(5, px, py, pz, rx, ry, rz, st, ct);
+                rt_loss += rt[0];
+                rt_grad_x += rt[1];
+                rt_grad_y += rt[2];
+                rt_grad_z += rt[3];
+                rt_grad_theta += rt[4];
+                rt_grad_l += rt[5];
+                rt_grad_w += rt[6];
+                rt_grad_h += rt[7];
+            }
+            vector<double> final_rt;
+            final_rt.push_back(ALPHA_O * rt_loss);
+            final_rt.push_back(ALPHA_O * rt_grad_x);
+            final_rt.push_back(ALPHA_O * rt_grad_y);
+            final_rt.push_back(ALPHA_O * rt_grad_z);
+            final_rt.push_back(ALPHA_O * rt_grad_theta);
+            final_rt.push_back(ALPHA_O * rt_grad_l);
+            final_rt.push_back(ALPHA_O * rt_grad_w);
+            final_rt.push_back(ALPHA_O * rt_grad_h);
+            return final_rt;
+        }
+    }
+
+    vector<double> calculate_face_loss(const face& f){
+        vector<double> rt;
+        double parea = f.area * sqrt(f.n.x * f.n.x + f.n.y * f.n.y);
+        double ct = cos(box.yaw);
+        double st = sin(box.yaw);
+
+        double px = f.area * (point(ct, st, 0.0) * f.n);
+        double py = f.area * (point(-st, ct, 0.0) * f.n);
+
+        if(abs(px) > abs(py)){
+            if(px > 0){
+                rt.push_back(parea / sum_projection_area * (f.area - px) * (f.area - px));
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(parea / sum_projection_area * -2.0 * (f.area - px) * py);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                return rt;
+            }
+            else{
+                rt.push_back(parea / sum_projection_area * (f.area + px) * (f.area + px));
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(parea / sum_projection_area * 2.0 * (f.area + px) * py);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                return rt;
+            }
+        }
+        else{
+            if(py > 0){
+                rt.push_back(parea / sum_projection_area * (f.area - py) * (f.area - py));
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(parea / sum_projection_area * 2.0 * (f.area - py) * px);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                return rt;
+            }
+            else{
+                rt.push_back(parea / sum_projection_area * (f.area + py) * (f.area + py));
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(parea / sum_projection_area * -2.0 * (f.area - py) * px);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                rt.push_back(0.0);
+                return rt;
+            }
+        }
     }
 
     void solve(){
@@ -207,6 +579,9 @@ struct group{
         double d_cvh = point2cvh(point(0,0,0));
 
         for(int iter = 0; iter < max_iter; iter++){
+            box.yaw = box.yaw - M_PI * 2 * int(box.yaw / M_PI / 2);
+            if (box.yaw < - M_PI) box.yaw += M_PI;
+            if (box.yaw > M_PI) box.yaw += M_PI;
             cur_loss = 0.0;
             g_x = 0.0;
             g_y = 0.0;
@@ -215,6 +590,8 @@ struct group{
             g_l = 0.0;
             g_w = 0.0;
             g_h = 0.0;
+
+            double lr = lr_init / (1+decay_k*iter);
 
             // calculate gradient
             // model loss
@@ -228,42 +605,73 @@ struct group{
             g_h += ALPHA_H * 2 * (box.h - gt_h);
 
             // point loss
-            
+            for(int i = 0; i < N; i++){
+                if(!is_hull[i]) continue;
+                vector<double> rt = calculate_box_loss(pts[i]);
+
+                cur_loss += ALPHA_P / V * rt[0];
+                g_x += ALPHA_P / V * rt[1];
+                g_y += ALPHA_P / V * rt[2];
+                g_z += ALPHA_P / V * rt[3];
+                g_t += ALPHA_P / V * rt[4];
+                g_l += ALPHA_P / V * rt[5];
+                g_w += ALPHA_P / V * rt[6];
+                g_h += ALPHA_P / V * rt[7];
+            }
 
             // face loss
+            for(int i = 0; i < F; i++){
+                if(occluded_face[i]) continue;
+                vector<double> rt = calculate_face_loss(face(pts[faces[i][0]], pts[faces[i][1]], pts[faces[i][2]]));
+
+                cur_loss += ALPHA_F * rt[0];
+                g_x += ALPHA_F * rt[1];
+                g_y += ALPHA_F * rt[2];
+                g_z += ALPHA_F * rt[3];
+                g_t += ALPHA_F * rt[4];
+                g_l += ALPHA_F * rt[5];
+                g_w += ALPHA_F * rt[6];
+                g_h += ALPHA_F * rt[7];
+            }
 
             // dist loss
-
+            vector<double> cvh_loss = calculate_box_loss(point(0.0, 0.0, 0.0));
+            double d = sqrt(cvh_loss[0]);
+            if (d > 1e-3){
+                double f = (d -d_cvh) / d;
+                cur_loss += ALPHA_D * f * f * cvh_loss[0];
+                g_x += ALPHA_D * f * cvh_loss[1];
+                g_y += ALPHA_D * f * cvh_loss[2];
+                g_z += ALPHA_D * f * cvh_loss[3];
+                g_t += ALPHA_D * f * cvh_loss[4];
+                g_l += ALPHA_D * f * cvh_loss[5];
+                g_w += ALPHA_D * f * cvh_loss[6];
+                g_h += ALPHA_D * f * cvh_loss[7];
+            }
 
             // update
+            box.x -= lr * g_x;
+            box.y -= lr * g_y;
+            box.z -= lr * g_z;
+            box.yaw -= lr * g_t;
+            box.l -= lr * g_l;
+            box.w -= lr * g_w;
+            box.h -= lr * g_h;
 
             // if loss is similar to previous, break
             if (iter>0 && abs(cur_loss - prv_loss) < loss_threshold_) break;
             prv_loss = cur_loss;
         }
-
+        cout << "center: " << center.x << " " << center.y << " " << center.z << endl;
+        cout << "x: " << box.x << endl;
+        cout << "y: " << box.y << endl;
+        cout << "z: " << box.z << endl;
+        cout << "yaw: " << box.yaw << endl;
+        cout << "l: " << box.l << endl;
+        cout << "w: " << box.w << endl;
+        cout << "h: " << box.h << endl;
     }
 };
-
-struct object{
-
-};
-
-point pixel2point(pixel3d p){
-    return point(p.x * resolution_x + minX, p.y * resolution_y + minY, p.z * resolution_z + minZ);
-}
-
-pixel3d point2pixel(point p){
-    return pixel3d((p.x - minX)/resolution_x, (p.y - minY)/resolution_y, (p.z - minZ)/resolution_z);
-}
-
-bool is_valid_pixel(pixel3d p){
-    return p.x >= 0 && p.x < GRID_X && p.y >=0 && p.y < GRID_Y && p.z >=0 && p.z < GRID_Z;
-}
-
-double norm3d(point p){
-    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
-}
 
 double gjk(const group& A, const group& B){
     return 0.0;
@@ -272,16 +680,6 @@ double gjk(const group& A, const group& B){
 group merge_groups(const vector<group>& groups){
     return group();
 }
-
-string zfill(int n){
-    if(n==0) return "000000";
-    int digit = log10(n) + 1;
-    string rt = "";
-    for(int i=0;i<6-digit;i++) rt += "0";
-    return rt+to_string(n);
-}
-
-
 
 
 #endif

@@ -57,7 +57,7 @@ int main(int argc, char **argv){
     cout << pcd_path << endl;
     int n_data = 1;
     for(int seq = 0; seq < n_data; seq++){
-        seq = 630;
+        seq = 800;
         // load pcd file
         string pcd_file = pcd_path + zfill(seq) + ".pcd";
 
@@ -131,45 +131,46 @@ int main(int argc, char **argv){
         }
 
         /* visualization of first clustering result */
-        // int n_points = 0;
-        // for(const auto& g : clusters) n_points += g.pts.size();
-        // pcl::PointCloud<pcl::PointXYZRGB> debug_cloud;
-        // debug_cloud.width = n_points;
-        // debug_cloud.height = 1;
-        // debug_cloud.is_dense = false;
-        // debug_cloud.points.resize(debug_cloud.width * debug_cloud.height);
-        // int index = 0;
-        // int cluster_num = 0;
-        // int n_clusters = clusters.size();
-        // cout << n_clusters << endl;
-        // cout << "debug" << endl;
-        // for(const auto& g : clusters) {
-        //     int rv = rand()%256;
-        //     int gv = rand()%256;
-        //     int bv = rand()%256;
-        //     for(const auto& p : g.pts){
-        //         pcl::PointXYZRGB pt;
-        //         pt.x = p.x;
-        //         pt.y = p.y;
-        //         pt.z = p.z;
-        //         pt.r = rv;
-        //         pt.g = gv;
-        //         pt.b = bv;
-        //         debug_cloud.points[index] = pt;
-        //         index++;
-        //     }
-        // }
-        // cout << "debug" << endl;
-        // pcl::visualization::CloudViewer viewer ("Simple Cloud Viewer");
-        // viewer.showCloud(debug_cloud.makeShared());
-        // cout << "debug" << endl;
-        // while (!viewer.wasStopped ())
-        // {
-        // }
+        int n_points = 0;
+        for(const auto& g : clusters) n_points += g.pts.size();
+        pcl::PointCloud<pcl::PointXYZRGB> debug_cloud;
+        debug_cloud.width = n_points;
+        debug_cloud.height = 1;
+        debug_cloud.is_dense = false;
+        debug_cloud.points.resize(debug_cloud.width * debug_cloud.height);
+        int index = 0;
+        int cluster_num = 0;
+        int n_clusters = clusters.size();
+        cout << n_clusters << endl;
+        cout << "debug" << endl;
+        for(const auto& g : clusters) {
+            int rv = rand()%256;
+            int gv = rand()%256;
+            int bv = rand()%256;
+            for(const auto& p : g.pts){
+                pcl::PointXYZRGB pt;
+                pt.x = p.x;
+                pt.y = p.y;
+                pt.z = p.z;
+                pt.r = rv;
+                pt.g = gv;
+                pt.b = bv;
+                debug_cloud.points[index] = pt;
+                index++;
+            }
+        }
+        cout << "debug" << endl;
+        pcl::visualization::CloudViewer viewer ("Simple Cloud Viewer");
+        viewer.showCloud(debug_cloud.makeShared());
+        cout << "debug" << endl;
+        while (!viewer.wasStopped ())
+        {
+        }
 
         // build convex polyhedron
         int G = clusters.size();
         for(int i = 0; i < G; i++) clusters[i].build_polyhedron();
+        for(int i = 0; i < G; i++) clusters[i].solve();
 
         // second clustering
         // vector<vector<int>> adj(G);
