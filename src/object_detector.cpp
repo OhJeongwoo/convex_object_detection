@@ -38,7 +38,7 @@ using namespace std;
 typedef pair<pixel3d, int> pixel_id;
 
 /********hyperparameter setting********/
-int cluster_threshold_ = 5;
+int cluster_threshold_ = 10;
 double group_threshold_ = 1.0;
 
 
@@ -48,18 +48,18 @@ double group_threshold_ = 1.0;
 
 int main(int argc, char **argv){
     ros::init(argc, argv, "object_detector");
-
+    clock_t begin = clock();
     // initialization
     string data_name = "RouteScenario_0";
     stringstream data_path;
     data_path << ros::package::getPath("convex_object_detection") << "/data/" << data_name << "/";
     string pcd_path = data_path.str() + "pcd/";
-    cout << pcd_path << endl;
-    int n_data = 1;
+    string obj_path = data_path.str() + "object/";
+    int n_data = 1000;
     for(int seq = 0; seq < n_data; seq++){
-        seq = 800;
         // load pcd file
         string pcd_file = pcd_path + zfill(seq) + ".pcd";
+        string obj_file = obj_path + zfill(seq) + ".txt";
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
         if (pcl::io::loadPCDFile<pcl::PointXYZ> (pcd_file, *cloud) == -1) {
@@ -70,11 +70,11 @@ int main(int argc, char **argv){
 
         // build voxel grid map
         vector<point> grid_map[GRID_X][GRID_Y][GRID_Z];
-        cout << cloud->points.size() << endl;
+        // cout << cloud->points.size() << endl;
         for(const auto& p : *cloud) {
-            double x = p.x + LIDAR_X;
-            double y = p.y + LIDAR_Y;
-            double z = p.z + LIDAR_Z;
+            double x = p.x + LIDAR_X + 0.03 * (double)rand() / (RAND_MAX);
+            double y = p.y + LIDAR_Y + 0.03 * (double)rand() / (RAND_MAX);
+            double z = p.z + LIDAR_Z + 0.03 * (double)rand() / (RAND_MAX);
             if(x < minX + EPS || x > maxX - EPS || y < minY + EPS || y > maxY - EPS || z < minZ + EPS || z > maxZ - EPS) continue;
             point t = point(x,y,z);
             pixel3d pixel = point2pixel(t);
@@ -124,53 +124,69 @@ int main(int argc, char **argv){
                         }
                         if (pts.size()<cluster_threshold_) continue;
                         clusters.push_back(group(pts));
-                        cout << pts.size() << endl;
                     }
                 }
             }
         }
 
         /* visualization of first clustering result */
-        int n_points = 0;
-        for(const auto& g : clusters) n_points += g.pts.size();
-        pcl::PointCloud<pcl::PointXYZRGB> debug_cloud;
-        debug_cloud.width = n_points;
-        debug_cloud.height = 1;
-        debug_cloud.is_dense = false;
-        debug_cloud.points.resize(debug_cloud.width * debug_cloud.height);
-        int index = 0;
-        int cluster_num = 0;
-        int n_clusters = clusters.size();
-        cout << n_clusters << endl;
-        cout << "debug" << endl;
-        for(const auto& g : clusters) {
-            int rv = rand()%256;
-            int gv = rand()%256;
-            int bv = rand()%256;
-            for(const auto& p : g.pts){
-                pcl::PointXYZRGB pt;
-                pt.x = p.x;
-                pt.y = p.y;
-                pt.z = p.z;
-                pt.r = rv;
-                pt.g = gv;
-                pt.b = bv;
-                debug_cloud.points[index] = pt;
-                index++;
-            }
-        }
-        cout << "debug" << endl;
-        pcl::visualization::CloudViewer viewer ("Simple Cloud Viewer");
-        viewer.showCloud(debug_cloud.makeShared());
-        cout << "debug" << endl;
-        while (!viewer.wasStopped ())
-        {
-        }
+        // int n_points = 0;
+        // for(const auto& g : clusters) n_points += g.pts.size();
+        // pcl::PointCloud<pcl::PointXYZRGB> debug_cloud;
+        // debug_cloud.width = n_points;
+        // debug_cloud.height = 1;
+        // debug_cloud.is_dense = false;
+        // debug_cloud.points.resize(debug_cloud.width * debug_cloud.height);
+        // int index = 0;
+        // int cluster_num = 0;
+        // int n_clusters = clusters.size();
+        // cout << n_clusters << endl;
+        // cout << "debug" << endl;
+        // for(const auto& g : clusters) {
+        //     int rv = rand()%256;
+        //     int gv = rand()%256;
+        //     int bv = rand()%256;
+        //     for(const auto& p : g.pts){
+        //         pcl::PointXYZRGB pt;
+        //         pt.x = p.x;
+        //         pt.y = p.y;
+        //         pt.z = p.z;
+        //         pt.r = rv;
+        //         pt.g = gv;
+        //         pt.b = bv;
+        //         debug_cloud.points[index] = pt;
+        //         index++;
+        //     }
+        // }
+        // pcl::visualization::CloudViewer viewer ("Simple Cloud Viewer");
+        // viewer.showCloud(debug_cloud.makeShared());
+        // while (!viewer.wasStopped ())
+        // {
+        // }
 
         // build convex polyhedron
         int G = clusters.size();
+        // int G = 1;
+        // cout << "build polyhedron" << endl;
         for(int i = 0; i < G; i++) clusters[i].build_polyhedron();
         for(int i = 0; i < G; i++) clusters[i].solve();
+
+        // ofstream out(obj_file.c_str());
+        // for(int i = 0; i< G; i++){
+        //     out << to_string(clusters[i].cur_loss) << " " 
+        //         << to_string(clusters[i].box.x) << " "
+        //         << to_string(clusters[i].box.y) << " " 
+        //         << to_string(clusters[i].box.z) << " " 
+        //         << to_string(clusters[i].box.yaw) << " " 
+        //         << to_string(clusters[i].box.l) << " " 
+        //         << to_string(clusters[i].box.w) << " "
+        //         << to_string(clusters[i].box.h) << endl;
+        // }
+        // out.close();
+
+        // cout << seq << "-th data is saved" << endl;
+
+
 
         // second clustering
         // vector<vector<int>> adj(G);
@@ -220,4 +236,6 @@ int main(int argc, char **argv){
         // for(int i=0;i<n_objects;i++) objects[i].solve();
 
     }
+    clock_t end = clock();
+    cout << double(end-begin) / CLOCKS_PER_SEC;
 }

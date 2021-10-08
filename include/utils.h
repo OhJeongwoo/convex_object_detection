@@ -21,14 +21,14 @@ const double EPS = 1e-6;
 double LIDAR_X = 0.0;
 double LIDAR_Y = 0.0;
 double LIDAR_Z = 2.5;
-double minX = -20.0;
-double maxX = 40.0;
-double minY = -30.0;
-double maxY = 30.0;
 // double minX = -20.0;
 // double maxX = 40.0;
-// double minY = -2.0;
-// double maxY = 6.0;
+// double minY = -30.0;
+// double maxY = 30.0;
+double minX = -20.0;
+double maxX = 40.0;
+double minY = -2.0;
+double maxY = 20.0;
 double minZ = 0.5;
 double maxZ = 2.0;
 double resolution_x = 1.0;
@@ -39,13 +39,13 @@ const int GRID_X = int((maxX-minX+EPS)/resolution_x);
 const int GRID_Y = int((maxY-minY+EPS)/resolution_y);
 const int GRID_Z = int((maxZ-minZ+EPS)/resolution_z);
 
-const double ALPHA_L = 1.0;
-const double ALPHA_W = 1.0;
-const double ALPHA_H = 1.0;
+const double ALPHA_L = 0.5;
+const double ALPHA_W = 0.5;
+const double ALPHA_H = 0.5;
 const double ALPHA_P = 1.0;
 const double ALPHA_O = 1.0;
-const double ALPHA_F = 1.0;
-const double ALPHA_D = 1.0;
+const double ALPHA_F = 10.0;
+const double ALPHA_D = 0.5;
 
 struct pixel3d{
     int x, y, z;
@@ -57,8 +57,7 @@ struct point{
     double x,y,z;
     double theta;
     bool visited;
-    point() : point(0,0){}
-    point(double x1, double y1): x(x1),y(y1), theta(0.0), visited(false){}
+    point() : point(0,0,0){}
     point(double x, double y, double z): x(x), y(y), z(z), theta(0.0), visited(false){}
     void update(point p){
         theta = atan2(y-p.y,x-p.x);
@@ -68,11 +67,11 @@ struct point{
         if(abs(y-o.y)>EPS) return y<o.y;
         return x<o.x;
     }
-    point operator +(const point &o) const{return point(x+o.x, y+o.y);}
-    point operator -(const point &o) const{return point(x-o.x, y-o.y);}
-    point operator -() const{return point(-x, -y);}
-    double operator * (const point &o) const{ return x*o.x + y*o.y;}
-    point operator *(const double t) const{return point(x*t, y*t);}
+    point operator +(const point &o) const{return point(x+o.x, y+o.y, z+o.z);}
+    point operator -(const point &o) const{return point(x-o.x, y-o.y, z-o.z);}
+    point operator -() const{return point(-x, -y, -z);}
+    double operator * (const point &o) const{ return x*o.x + y*o.y + z*o.z;}
+    point operator *(const double t) const{return point(x*t, y*t, z*t);}
 };
 
 point pixel2point(pixel3d p){
@@ -123,10 +122,21 @@ struct face{
     face(point A, point B, point C):A(A), B(B), C(C){
         area = 0.5 * norm3d(cross(A-B, A-C));
         n = normalize(cross(A-B, A-C));
+        // cout << "area: " << area << endl;
+        // cout << "point" << endl;
+        // cout << A.x << " " << A.y << " " << A.z << endl;
+        // cout << B.x << " " << B.y << " " << B.z << endl;
+        // cout << C.x << " " << C.y << " " << C.z << endl;
+        // cout << "a-b and a-c" << endl;
+        // cout << (A-B).x << " " << (A-B).y << " " << (A-B).z << endl;
+        // cout << (A-C).x << " " << (A-C).y << " " << (A-C).z << endl;
+        // cout << "normal vector" << endl;
+        // cout << n.x << " " << n.y << " " << n.z << endl;
         a = n.x;
         b = n.y;
         c = n.z;
-        d = -(a * A.x + b * A.y + c * A.z);
+        d = (a * A.x + b * A.y + c * A.z);
+        // ax+by+cz = d
 
         la = norm3d(B-C);
         lb = norm3d(C-A);
@@ -142,7 +152,7 @@ struct face{
     }
 
     double distance2face(point p){
-        double t = a * p.x + b * p.y + c * p.z + d;
+        double t = a * p.x + b * p.y + c * p.z - d;
         point ph = point(p.x - a * t, p.y - b * t, p.z - c * t);
 
         if (on_face(ph)) return t;
@@ -239,6 +249,10 @@ struct group{
         has_polyhedron = false;
     }
     void build_polyhedron(){
+        // for (point p : pts){
+        //     cout << p.x << " " << p.y << " " << p.z << endl;
+        // }
+        // cout << "***********************" << endl;
         ch_vertex* vertices;
         vertices = (ch_vertex*)malloc(N*sizeof(ch_vertex));
         for(int i=0;i<N;i++){
@@ -261,12 +275,14 @@ struct group{
             center.x += pts[i].x;
             center.y += pts[i].y;
             center.z += pts[i].z;
+            // cout << pts[i].x << " " << pts[i].y << " " << pts[i].z << endl;
         }
         center.x /= V;
         center.y /= V;
         center.z /= V;
 
         for(int i=0;i<F;i++){
+            // cout << "face " << i << ": " << faces[i][0] << " " << faces[i][1] << " " << faces[i][2] <<endl;
             face f = face(pts[faces[i][0]], pts[faces[i][1]], pts[faces[i][2]]);
             if(f.n * center > f.d){
                 int tmp = faces[i][0];
@@ -275,23 +291,44 @@ struct group{
             }
             
         }
-        
+        int TF = 0;
         for(int i=0;i<F;i++) {
             if (is_occluded(i)) occluded_face.push_back(true);
             else {
-                occluded_face.push_back(false);
-                VF ++;
+                TF ++;
                 face f = face(pts[faces[i][0]], pts[faces[i][1]], pts[faces[i][2]]);
-                sum_projection_area += f.area * sqrt(f.n.x * f.n.x + f.n.y * f.n.y);
+                if (f.area < EPS)occluded_face.push_back(true);
+                else{
+                    VF ++;
+                    occluded_face.push_back(false);
+                    // cout << "area: " << f.area << endl;
+                    // cout << "scale: " << sqrt(f.n.x * f.n.x + f.n.y * f.n.y) << endl;
+                    // cout << "area: " << f.area << endl;
+                    // cout << "point" << endl;
+                    // cout << f.A.x << " " << f.A.y << " " << f.A.z << endl;
+                    // cout << f.B.x << " " << f.B.y << " " << f.B.z << endl;
+                    // cout << f.C.x << " " << f.C.y << " " << f.C.z << endl;
+                    // cout << "a-b and a-c" << endl;
+                    // cout << (f.A-f.B).x << " " << (f.A-f.B).y << " " << (f.A-f.B).z << endl;
+                    // cout << (f.A-f.C).x << " " << (f.A-f.C).y << " " << (f.A-f.C).z << endl;
+                    // cout << "normal vector" << endl;
+                    // cout << f.n.x << " " << f.n.y << " " << f.n.z << endl;
+                    sum_projection_area += f.area * sqrt(f.n.x * f.n.x + f.n.y * f.n.y);
+                }
+                
             }
         }
+        // cout << "sum: " << sum_projection_area << endl;
+        // cout << "# of faces: " << F << endl;
+        // cout << "# of TF: " << TF << endl;
+        // cout << "# of valid face: " << VF << endl;
 
 
-        cout << "Completed to build polyhedron" << endl;
-        cout << "N: " << N << endl;
-        cout << "V: " << V << endl;
-        cout << "F: " << F << endl;
-        cout << "center: " << center.x << " " << center.y << " " << center.z << endl;
+        // cout << "Completed to build polyhedron" << endl;
+        // cout << "N: " << N << endl;
+        // cout << "V: " << V << endl;
+        // cout << "F: " << F << endl;
+        // cout << "center: " << center.x << " " << center.y << " " << center.z << endl;
         has_polyhedron = true;
     }
 
@@ -513,27 +550,27 @@ struct group{
         double ct = cos(box.yaw);
         double st = sin(box.yaw);
 
-        double px = f.area * (point(ct, st, 0.0) * f.n);
-        double py = f.area * (point(-st, ct, 0.0) * f.n);
+        double px = (point(ct, st, 0.0) * f.n);
+        double py = (point(-st, ct, 0.0) * f.n);
 
         if(abs(px) > abs(py)){
             if(px > 0){
-                rt.push_back(parea / sum_projection_area * (f.area - px) * (f.area - px));
+                rt.push_back(parea / sum_projection_area * (1.0 - px) * (1.0 - px));
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
-                rt.push_back(parea / sum_projection_area * -2.0 * (f.area - px) * py);
+                rt.push_back(parea / sum_projection_area * -2.0 * (1.0 - px) * py);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 return rt;
             }
             else{
-                rt.push_back(parea / sum_projection_area * (f.area + px) * (f.area + px));
+                rt.push_back(parea / sum_projection_area * (1.0 + px) * (1.0 + px));
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
-                rt.push_back(parea / sum_projection_area * 2.0 * (f.area + px) * py);
+                rt.push_back(parea / sum_projection_area * 2.0 * (1.0 + px) * py);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
@@ -542,22 +579,22 @@ struct group{
         }
         else{
             if(py > 0){
-                rt.push_back(parea / sum_projection_area * (f.area - py) * (f.area - py));
+                rt.push_back(parea / sum_projection_area * (1.0 - py) * (1.0 - py));
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
-                rt.push_back(parea / sum_projection_area * 2.0 * (f.area - py) * px);
+                rt.push_back(parea / sum_projection_area * 2.0 * (1.0 - py) * px);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 return rt;
             }
             else{
-                rt.push_back(parea / sum_projection_area * (f.area + py) * (f.area + py));
+                rt.push_back(parea / sum_projection_area * (1.0 + py) * (1.0 + py));
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
-                rt.push_back(parea / sum_projection_area * -2.0 * (f.area - py) * px);
+                rt.push_back(parea / sum_projection_area * -2.0 * (1.0 - py) * px);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
                 rt.push_back(0.0);
@@ -637,7 +674,7 @@ struct group{
             // dist loss
             vector<double> cvh_loss = calculate_box_loss(point(0.0, 0.0, 0.0));
             double d = sqrt(cvh_loss[0]);
-            if (d > 1e-3){
+            if (d > 1.0){
                 double f = (d -d_cvh) / d;
                 cur_loss += ALPHA_D * f * f * cvh_loss[0];
                 g_x += ALPHA_D * f * cvh_loss[1];
@@ -662,14 +699,14 @@ struct group{
             if (iter>0 && abs(cur_loss - prv_loss) < loss_threshold_) break;
             prv_loss = cur_loss;
         }
-        cout << "center: " << center.x << " " << center.y << " " << center.z << endl;
-        cout << "x: " << box.x << endl;
-        cout << "y: " << box.y << endl;
-        cout << "z: " << box.z << endl;
-        cout << "yaw: " << box.yaw << endl;
-        cout << "l: " << box.l << endl;
-        cout << "w: " << box.w << endl;
-        cout << "h: " << box.h << endl;
+        // cout << "center: " << center.x << " " << center.y << " " << center.z << endl;
+        // cout << "x: " << box.x << endl;
+        // cout << "y: " << box.y << endl;
+        // cout << "z: " << box.z << endl;
+        // cout << "yaw: " << box.yaw << endl;
+        // cout << "l: " << box.l << endl;
+        // cout << "w: " << box.w << endl;
+        // cout << "h: " << box.h << endl;
     }
 };
 
