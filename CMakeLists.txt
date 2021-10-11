@@ -64,6 +64,14 @@ add_executable(object_detector src/object_detector.cpp ${HEADERS} ${SOURCES})
 target_link_libraries(object_detector ${catkin_LIBRARIES} ${CV_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES})
 add_dependencies(object_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+add_executable(fusion_object_detector src/fusion_object_detector.cpp ${HEADERS} ${SOURCES})
+target_link_libraries(fusion_object_detector ${catkin_LIBRARIES} ${CV_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES})
+add_dependencies(fusion_object_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+add_executable(video_generator src/video_generator.cpp ${HEADERS} ${SOURCES})
+target_link_libraries(video_generator ${catkin_LIBRARIES} ${CV_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES})
+add_dependencies(video_generator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
 catkin_install_python(PROGRAMS
   scripts/npy2pcd.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -14,21 +14,20 @@
 using namespace std;
 
 
-
 const double INF = 1e9;
 const double EPS = 1e-6;
 
 double LIDAR_X = 0.0;
 double LIDAR_Y = 0.0;
-double LIDAR_Z = 2.5;
+double LIDAR_Z = 1.7;
 // double minX = -20.0;
 // double maxX = 40.0;
 // double minY = -30.0;
 // double maxY = 30.0;
 double minX = -20.0;
 double maxX = 40.0;
-double minY = -2.0;
-double maxY = 20.0;
+double minY = -30.0;
+double maxY = 30.0;
 double minZ = 0.5;
 double maxZ = 2.0;
 double resolution_x = 1.0;
@@ -42,10 +41,12 @@ const int GRID_Z = int((maxZ-minZ+EPS)/resolution_z);
 const double ALPHA_L = 0.5;
 const double ALPHA_W = 0.5;
 const double ALPHA_H = 0.5;
-const double ALPHA_P = 1.0;
+const double ALPHA_P = 0.5;
 const double ALPHA_O = 1.0;
 const double ALPHA_F = 10.0;
-const double ALPHA_D = 0.5;
+const double ALPHA_D = 0.3;
+const double INIT_LR = 5e-2;
+const double DECAY_K = 5e-2;
 
 struct pixel3d{
     int x, y, z;
@@ -57,6 +58,10 @@ struct point{
     double x,y,z;
     double theta;
     bool visited;
+    vector<double> scores;
+    double depth;
+    int px, py;
+    int cluster_id;
     point() : point(0,0,0){}
     point(double x, double y, double z): x(x), y(y), z(z), theta(0.0), visited(false){}
     void update(point p){
@@ -188,15 +193,38 @@ struct bounding_box{
 
     bounding_box(): bounding_box(1){}
     bounding_box(int type): type(type){
+        this->yaw = 0.0;
+        if(type == 0){
+            this->l = 1.0;
+            this->w = 1.0;
+            this->h = 1.6;
+        }
         if(type == 1){
-            this->x = 0.0;
-            this->y = 0.0;
-            this->z = 0.0;
-            this->yaw = 0.0;
+            this->l = 3.0;
+            this->w = 1.0;
+            this->h = 1.0;
+        }
+        if(type == 2){
             this->l = 5.0;
-            this->w = 2.5;
+            this->w = 2.0;
             this->h = 1.5;
         }
+        if(type == 3){
+            this->l = 3.0;
+            this->w = 1.0;
+            this->h = 1.0;
+        }
+        if(type == 5){
+            this->l = 10.0;
+            this->w = 2.0;
+            this->h = 2.5;
+        }
+        if(type == 7){
+            this->l = 8.0;
+            this->w = 2.0;
+            this->h = 2.5;
+        }
+
     }
     bounding_box(point p, int type) : bounding_box(type){
         this->x = p.x;
@@ -207,16 +235,18 @@ struct bounding_box{
 };
 
 struct group{
-    vector<point> pts;
-    // vector<int> vertices;
-    vector<vector<int>> faces;
     int N;
     int V;
     int F;
     int VF;
+    int M;
+    vector<point> pts;
+    vector<vector<int>> faces;
+    int class_type;
     double sum_projection_area;
     vector<bool> is_hull;
     vector<bool> occluded_face;
+    vector<double> scores;
     bool has_polyhedron;
     point center;
     bounding_box box;
@@ -234,8 +264,8 @@ struct group{
     double gt_l;
     double gt_w;
     double gt_h;
-    double lr_init = 3e-2;
-    double decay_k = 5e-2;
+    double lr_init = INIT_LR;
+    double decay_k = DECAY_K;
 
 
     group() {}
@@ -243,11 +273,47 @@ struct group{
         V = 0;
         F = 0;
         VF = 0;
+        M = pts[0].scores.size();
+        scores = vector<double>(M, 0.0);
         center = point();
+        for(const point& p : pts) center = center + p;
+        center = center * (1.0 / N);
         max_iter = 100;
         loss_threshold_ = 0.1;
         has_polyhedron = false;
     }
+
+    group(vector<point> pts, int class_type): pts(pts), N(pts.size()), class_type(class_type){
+        V = 0;
+        F = 0;
+        VF = 0;
+        M = pts[0].scores.size();
+        scores = vector<double>(M, 0.0);
+        center = point();
+        for(const point& p : pts) center = center + p;
+        center = center * (1.0 / N);
+        max_iter = 100;
+        loss_threshold_ = 0.1;
+        has_polyhedron = false;
+    }
+
+    void calculate_confidence(){
+        for(const point& p : pts){
+            for(int i = 0; i < M; i++) scores[i] += p.scores[i];
+        }
+        for(int i=0;i<M;i++) cout << scores[i] / N << " ";
+        cout << endl;
+    }
+
+    void add_confidence(const point& p){
+        for(int i = 0; i < M; i++) scores[i] += p.scores[i] / N;
+    }
+
+    void print_confidence(){
+        for(int i=0;i<M;i++) cout << scores[i] << " ";
+        cout << endl;
+    }
+
     void build_polyhedron(){
         // for (point p : pts){
         //     cout << p.x << " " << p.y << " " << p.z << endl;
@@ -604,10 +670,10 @@ struct group{
     }
 
     void solve(){
-        box = bounding_box(center, 1);
-        gt_l = 5.0;
-        gt_w = 2.5;
-        gt_h = 1.5;
+        box = bounding_box(center, class_type);
+        gt_l = box.l;
+        gt_w = box.w;
+        gt_h = box.h;
 
         // classify occluded faces
 

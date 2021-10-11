@@ -26,8 +26,8 @@ def bin_to_pcd(binFileName, pcdFileName):
     o3d.io.write_point_cloud(pcdFileName, pcd)
     return 
 
-data_name = "RouteScenario_0"
-N = 1000
+data_name = "demo1"
+N = 10
 data_path = rospkg.RosPack().get_path("convex_object_detection") + "/data/" + data_name + "/"
 npy_path = data_path + "lidar/"
 bin_path = data_path + "bin/"
@@ -39,6 +39,6 @@ for seq in range(N):
     npy_file = npy_path + str(seq).zfill(6) + ".npy"
     bin_file = bin_path + str(seq).zfill(6) + ".bin"
     pcd_file = pcd_path + str(seq).zfill(6) + ".pcd"
-    npy_to_bin(npy_file, bin_file)
+    # npy_to_bin(npy_file, bin_file)
     time.sleep(0.1)
     bin_to_pcd(bin_file, pcd_file)
