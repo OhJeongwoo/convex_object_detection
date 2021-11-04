@@ -29,7 +29,8 @@ find_package(PCL 1.8 REQUIRED)
 
 add_message_files(
   DIRECTORY msg
-  FILES 
+  FILES
+  Instance.msg CameraDetectorResult.msg
 )
 
 generate_messages(DEPENDENCIES std_msgs geometry_msgs sensor_msgs)
@@ -71,6 +72,10 @@ add_dependencies(fusion_object_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${ca
 add_executable(video_generator src/video_generator.cpp ${HEADERS} ${SOURCES})
 target_link_libraries(video_generator ${catkin_LIBRARIES} ${CV_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES})
 add_dependencies(video_generator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+add_executable(polyhedron_object_detector src/polyhedron_object_detector.cpp ${HEADERS} ${SOURCES})
+target_link_libraries(polyhedron_object_detector ${catkin_LIBRARIES} ${CV_LIBRARIES} ${OpenCV_LIBS} ${PCL_LIBRARIES})
+add_dependencies(polyhedron_object_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 catkin_install_python(PROGRAMS
   scripts/npy2pcd.py

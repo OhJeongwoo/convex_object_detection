@@ -1,0 +1,10 @@
+int32 id
+int32 type
+int32 cx
+int32 cy
+int32 width
+int32 height
+geometry_msgs/Point pos
+geometry_msgs/Point size
+float32 yaw
+float32 confidence
